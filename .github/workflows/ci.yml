@@ -13,25 +13,25 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      # Step 1: Checkout your application source
+      # Step 1: Checkout your source code
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      # Step 2: Setup Google Cloud SDK and authenticate using your service account key
+      # Step 2: Setup Google Cloud SDK
       - name: Setup Google Cloud SDK
         uses: google-github-actions/setup-gcloud@v2
         with:
           project_id: ${{ secrets.GCP_PROJECT_ID }}
           service_account_key: ${{ secrets.GCP_SERVICE_ACCOUNT_KEY }}
 
-      # Step 3: Explicit authentication to Artifact Registry
+      # Step 3: Authenticate Docker to Artifact Registry
       - name: Authenticate Docker to GAR
         run: |
-          echo "${{ secrets.GCP_SERVICE_ACCOUNT_KEY }}" > key.json
+          printf '%s' "${{ secrets.GCP_SERVICE_ACCOUNT_KEY }}" > key.json
           gcloud auth activate-service-account --key-file=key.json
           gcloud auth configure-docker ${{ env.REGION }}-docker.pkg.dev --quiet
 
-      # Step 4: Build and push image to Artifact Registry
+      # Step 4: Build and push Docker image to Artifact Registry
       - name: Build and Push Image
         run: |
           IMAGE_TAG=${GITHUB_RUN_NUMBER}
@@ -42,15 +42,15 @@ jobs:
           docker push $IMAGE_URI
           echo "IMAGE_URI=$IMAGE_URI" >> $GITHUB_ENV
 
-      # Step 5: Clone GitOps (backend-deploy) repository
+      # Step 5: Clone GitOps (backend-deploy) repo
       - name: Clone GitOps Repo
         uses: actions/checkout@v4
         with:
-          repository: dileep123321/backend-deploy-repo   # 👈 your GitOps repo
+          repository: dileep123321/backend-deploy-repo
           token: ${{ secrets.GITOPS_REPO_TOKEN }}
           path: deploy
 
-      # Step 6: Update deployment.yaml with the new image
+      # Step 6: Update deployment manifest
       - name: Update Kubernetes Manifest
         run: |
           cd deploy/manifests
