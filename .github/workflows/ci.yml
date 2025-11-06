@@ -5,69 +5,75 @@ on:
     branches: [ main ]
 
 env:
-  REGION: asia-south1
-  IMAGE_NAME: backend-app
+  REGION: asia-south1               # Your Artifact Registry region
+  IMAGE_NAME: backend-app           # Your image name
 
 jobs:
   build:
     runs-on: ubuntu-latest
 
     steps:
-      # Step 1: Checkout Code
+      # ✅ Step 1: Checkout your application source code
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      # Step 2: Authenticate to GCP using Service Account Key
-      - name: Authenticate to Google Cloud
-        run: |
-          echo "🔐 Setting up GCP authentication..."
-          echo '${{ secrets.GCP_SERVICE_ACCOUNT_KEY }}' > ${HOME}/gcp-key.json
-          gcloud auth activate-service-account --key-file=${HOME}/gcp-key.json
-          gcloud config set project ${{ secrets.GCP_PROJECT_ID }}
-          gcloud auth print-access-token
+      # ✅ Step 2: Setup GCP SDK and authenticate with your service account
+      - name: Setup Google Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+        with:
+          project_id: ${{ secrets.GCP_PROJECT_ID }}
+          service_account_key: ${{ secrets.GCP_SERVICE_ACCOUNT_KEY }}
 
-      # Step 3: Configure Docker to use Google Artifact Registry credentials
+      # ✅ Step 3: Verify authentication and project context
+      - name: Verify GCP Auth
+        run: |
+          echo "🔍 Verifying GCP authentication..."
+          gcloud auth list
+          gcloud config list project
+
+      # ✅ Step 4: Configure Docker to use Google Artifact Registry
       - name: Configure Docker for GAR
-        run: |
-          echo "⚙️ Configuring Docker authentication for Artifact Registry..."
-          gcloud auth configure-docker ${{ env.REGION }}-docker.pkg.dev --quiet
+        run: gcloud auth configure-docker ${{ env.REGION }}-docker.pkg.dev --quiet
 
-      # Step 4: Build and Push Docker Image
-      - name: Build and Push Image to GAR
+      # ✅ Step 5: Build and Push Docker image to GAR (with explicit login fix)
+      - name: Build and Push Image
         run: |
-          IMAGE_TAG=${GITHUB_RUN_NUMBER}
+          IMAGE_TAG=${GITHUB_RUN_NUMBER}   # or use ${GITHUB_SHA::7} for short commit ID
           IMAGE_URI=${{ env.REGION }}-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/backend-repo/${{ env.IMAGE_NAME }}:${IMAGE_TAG}
 
-          echo "🚀 Building image: $IMAGE_URI"
+          echo "🚀 Building Docker image: $IMAGE_URI"
           docker build -t $IMAGE_URI .
-          
-          echo "📦 Authenticating Docker to GAR..."
+
+          echo "🔐 Authenticating Docker to Google Artifact Registry..."
           gcloud auth print-access-token | docker login -u oauth2accesstoken --password-stdin https://${{ env.REGION }}-docker.pkg.dev
-          
+
           echo "⬆️ Pushing image to Artifact Registry..."
           docker push $IMAGE_URI
 
           echo "IMAGE_URI=$IMAGE_URI" >> $GITHUB_ENV
 
-      # Step 5: Clone GitOps Repo
+      # ✅ Step 6: Clone your GitOps (deploy) repository
       - name: Clone GitOps Repo
         uses: actions/checkout@v4
         with:
-          repository: dileep123321/backend-deploy-repo
+          repository: dileep123321/backend-deploy-repo   # 👈 your actual GitOps repo
           token: ${{ secrets.GITOPS_REPO_TOKEN }}
           path: deploy
 
-      # Step 6: Update Kubernetes Manifest
-      - name: Update Deployment Manifests
+      # ✅ Step 7: Update image tag in deployment.yaml
+      - name: Update Kubernetes Manifest
         run: |
           cd deploy/manifests
+          echo "🔧 Updating image tag in deployment.yaml..."
           sed -i "s|image: .*|image: $IMAGE_URI|" deployment.yaml
+
           git config user.name "github-actions[bot]"
           git config user.email "actions@github.com"
+
           git add .
-          git commit -m "Updated image to $IMAGE_URI" || echo "No changes"
+          git commit -m "Update image to $IMAGE_URI" || echo "No changes to commit"
           git push
 
-      # Step 7: Completion Message
+      # ✅ Step 8: Confirm success
       - name: Completed
-        run: echo "✅ Image successfully built, pushed to GAR, and manifest updated!"
+        run: echo "✅ Image pushed to GAR and manifests updated successfully!"
